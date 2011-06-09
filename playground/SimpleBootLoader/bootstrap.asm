@@ -1,100 +1,188 @@
-[BITS 16]
-[ORG 0x7C00]
-
 ; demo. reads bootsector into ram
 ; assemble with
 ;		nasm bootstrap.asm -fbin
 ; inject into bootsector of a hd image using injectbl from tools
 ; 		./injectbl bootstrap image.img 0
 
-print_bootmsg:
+[BITS 16]
+[ORG 0x7C00]
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;									MACROS	
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; DAP structure for reading params (int 0x13)
+%define 	DAP_START	0x0500
+struc		tDAP
+			.SIZE			RESB	1
+			.RESERVED		RESB	1
+			.READ_BLOCKS	RESW	1
+			.TO_OFFSET		RESW	1
+			.TO_SEGMENT		RESW	1
+			.START_BLOCK	RESQ	1
+endstruc
+%define	DAP(x)	DAP_START + tDAP. %+ x
+
+; int 0x10 defines
+%define VIDEOMODE 0x03		;80x25 16 colors
+%define TTY 0x0e 			;teletype mode
+
+; int 0x13 defines
+%define HD 0x80				; hd0
+%define	EXTENDED_READ 0x42
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;									MAIN	
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	call 	cls
-	mov 	ax,msg_check
+	
+	; print boot message
+	push	msg_check
+	call 	printsz			
+	
+	
+	
+	;load boot sector to 0x7E00
+	push	0x0000				;start read at block number
+	push	0x0000				;assuming the stack in 16bit mode is only 16bits wide
+	push	0x0000				;
+	push	0x0000				;
+	
+	push	0x07E0				;read to segment 0x07E0
+	push	0x0000				;read to offset 0		 (= mem addr 0x7E00)	
+		
+	push	0x0001				;read 1 block
+	
+	call	load
+	
+	
+	jnc 	cont				;check for errors
+	push	msg_error			;and complain if there were any
 	call 	printsz
 
+cont
+	push 	msg_done
+	call	printsz
 
-load_sector:
-	; just messing with int 13h
-	mov ax, 0x10		;DAP size = 16 bytes				[Byte]   0x10
-	mov [0x0500],ax		;reserved byte zero					[Byte]   0x00
+hang:
+	jmp hang					;hang
 	
-	mov	ax,0x01			;read one block						[Word] 0x0001
-	mov [0x0502],ax		;
+	
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;									FUNCTIONS	
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; read from hd0
+; parameters:
+;				W	number of blocks
+;				W	read to offset
+;				W	read to segment
+;				QW	start at block number (push words hi to lo)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+load:
+
+	push 	bp
+	mov		bp,sp
+	
+	push 	ds
+	push 	si
+	
+	push 	ax
+	push 	bx
+	
+	; prepare DAP
+	mov	 	ax, 0x10				;DAP size = 16 bytes	[Byte]   0x10
+	mov 	[DAP(SIZE)],ax			;reserved byte 			[Byte]   0x00
+	
+	mov		ax,[4+bp]				;no. of blocks to read	[Word] 
+	mov 	[DAP(READ_BLOCKS)],ax	;
 				
-	xor ax,ax			; offset							[Word] 0x0000
-	mov [0x0504],ax		;
-	mov ax,0x7E0		;read to 0x7E00	(0x7E * 0x10)		[Word] 0x07E0
-	mov [0x0506],ax		;	
+	mov 	ax,[6+bp]				;offset					[WORD]
+	mov 	[DAP(TO_OFFSET)],ax		;
+	mov 	ax,[8+bp]				;segment				[WORD]
+	mov 	[DAP(TO_SEGMENT)],ax	;	
 	
-	xor ax,ax			; start at block number 0
-	mov	[0x0508],ax		;									[Word] 0x0000
-	mov	[0x050A],ax		;									[Word] 0x0000
-	mov	[0x050C],ax		;									[Word] 0x0000
-	mov	[0x050E],ax		;									[Word] 0x0000
+	mov 	ax,[10+bp]				; start at block		[QWORD]
+	mov		[DAP(START_BLOCK)],ax
+	mov 	ax,[12+bp]
+	mov		[DAP(START_BLOCK)+2],ax
+	mov 	ax,[14+bp]
+	mov		[DAP(START_BLOCK)+4],ax
+	mov 	ax,[16+bp]
+	mov		[DAP(START_BLOCK)+6],ax
 	 
+	; call interrupt
+	mov ax, (DAP_START/0x10)		;
+	mov ds,ax						;using dap at given address		
+	xor si,si						;offset = 0
 
-	push ds				; push data segment to retain value
-	
-	mov ax, 0x0050		;0x50 * 0x10 = 0x500
-	mov ds,ax			;using dap at 0x500
-	
-	xor si,si			;offset 0
-	mov dl, 0x80		;from hd0
-	mov	ah, 0x42		;extended read
+	mov dl, HD						;
+	mov	ah, EXTENDED_READ
 	
 	int 0x13
-	
-	pop ds			 	
 		
+.done
+	pop bx
+	pop ax
+	pop si
+	pop ds
+
+	pop bp
+	ret	
 	
-	jc ioerror
-	
-	mov 	ax,msg_lddone
-	call 	printsz
-			
-hang:
-	jmp hang
-		
-ioerror:
-	mov  ax,msg_error
-	call printsz
-	jmp hang
-	
-	
-; print string in ax (will change ax)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; prints zero terminated string
+; parameters:
+;				W	pointer to string
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 printsz:
-		push	bx
-		push	si
+	
+	push 	bp
+	mov		bp,sp
+	
+	push	si
+	push 	ax
+	
+	mov		si,[4+bp]
+	mov     ah, TTY
 		
-		mov		si,ax
-		
-        mov     ah, 0x0e        ; Teletype output
-        mov     bl, 0x07        ; text mode = light grey foreground
-
 .loop:
-		mov		al,[si]
-        or     	al,al			
-        jz      .done           ; Exit on \0
-        int     0x10            ; print the character
-		inc		si				; 
-        jmp     .loop           ; start over
+	mov		al,[si]
+    or     	al,al			
+    jz      .done           	; Exit on \0
+    int     0x10	            ; print the character
+	inc		si					; 
+    jmp     .loop       	    ; start over
 .done:
-		pop 	si
-		pop		bx
-        ret
+	pop		ax
+	pop 	si
+	
+	pop		bp
+	ret
+		
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;clear screen / set mode
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 cls:
 		push	ax
-		xor		ah,ah
-		mov		al,0x03
+		xor		ah,ah				;set video mode
+		mov		al,VIDEOMODE
 		int		0x10
 		pop		ax
 		ret
 		
 
-;Messages
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;									DATA	
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 msg_check:	db      'Booting...',0x0a,0x0d,0x0
 msg_error:	db		'I/O Error' ,0x0a,0x0d,0x0
-msg_lddone: db		'Loading done',0x0a,0x0d,0x0
+msg_done: 	db		'Loading done',0x0a,0x0d,0x0
 					
