@@ -1,6 +1,6 @@
 /* Just a little tool....
 
-/* Copies all bytes from a bootstrap file from a given offset into an image file starting at that same offset */
+/* Copies all bytes from a bootstrap file into an image file starting at the given offset */
 /* Check booter.asm.
 /* Example:
 /* 			injectbl booter BYOOS_HD.dmg 0x5A
