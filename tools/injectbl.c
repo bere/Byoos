@@ -1,10 +1,9 @@
-/* Just a little tool....
-
-/* Copies all bytes from a bootstrap file into an image file starting at the given offset */
-/* Check booter.asm.
-/* Example:
-/* 			injectbl booter BYOOS_HD.dmg 0x5A
-/* Will pump contents from booter into BYOOS_HD.dmg starting at 0x5A */
+/********************************************************************************************
+ * Copies all bytes from a bootstrap file into an image file starting at the given offset.  *
+ * Example:                                                                                 *
+ * 			injectbl booter BYOOS_HD.dmg 0x5A                                   *
+ * Will pump contents from booter into BYOOS_HD.dmg starting at 0x5A                        *
+ *******************************************************************************************/
 
 #include <stdio.h>
 #include <stdlib.h>
