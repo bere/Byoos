@@ -7,6 +7,7 @@
 [BITS 16]
 [ORG 0x7C00]
 
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;									MACROS	
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -38,8 +39,8 @@ endstruc
 	
 	; print boot message
 	push	msg_check
-	call 	printsz			
-	
+	call 	printsz
+	add		sp,2				;reset stack pointer (2 bytes pushed)
 	
 	
 	;load boot sector to 0x7E00
@@ -53,21 +54,29 @@ endstruc
 		
 	push	0x0001				;read 1 block
 	
-	call	load
-	
+	call	load				;cleaning up later (add changes carry flag)------v 
 	
 	jnc 	cont				;check for errors
 	push	msg_error			;and complain if there were any
 	call 	printsz
-
+	add		sp,2				;reset stack pointer (2 bytes pushed)
 cont
+	add		sp,14				;;reset stack pointer (2 bytes pushed) ----------^  	
+	
 	push 	msg_done
 	call	printsz
-
+	add		sp,2
+	
 hang:
 	jmp hang					;hang
 	
 	
+
+	0xfe
+	0x7fc0:	0xff	0xff	0x0b	0xfe	0xff	0xff	0x01	0x00
+	0x7fc8:	0x00	0x00	0xff	0x1f	0x03	0x00	0x00	0x00
+
+
 
 
 
